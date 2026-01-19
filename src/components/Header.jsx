@@ -1,5 +1,6 @@
 import React from 'react';
 import { Database, Filter } from 'lucide-react';
+import ExportJSON from './ExportJSON';
 
 const Header = ({ 
   parsedData, 
@@ -22,12 +23,15 @@ const Header = ({
             </p>
           </div>
         </div>
-        <button
-          onClick={onReset}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-        >
-          Carica Nuovo File
-        </button>
+        <div className="flex gap-2">
+          <ExportJSON parsedData={parsedData} filename="database-schema" />
+          <button
+            onClick={onReset}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+          >
+            Carica Nuovo File
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-4 flex-wrap">
