@@ -10,13 +10,27 @@ export const DiagramTab = ({ parsedData }) => {
   const [selectedNode, setSelectedNode] = useState(null);
   const [initialPositions, setInitialPositions] = useState(new Map());
 
-  const allNodes = [...parsedData.classes, ...parsedData.interfaces];
+  // Combina classi e interfacce
+  const allNodes = React.useMemo(() => {
+    const combined = [...parsedData.classes, ...parsedData.interfaces];
+    console.log('DiagramTab - Total nodes:', combined.length);
+    console.log('DiagramTab - Classes:', parsedData.classes.length);
+    console.log('DiagramTab - Interfaces:', parsedData.interfaces.length);
+    return combined;
+  }, [parsedData]);
 
   // Calcola layout iniziale quando cambiano i dati
   useEffect(() => {
+    if (allNodes.length === 0) {
+      console.warn('No nodes to layout');
+      return;
+    }
+
+    console.log('Calculating layout for', allNodes.length, 'nodes');
     const positions = calculateSmartLayout(allNodes, parsedData.relations);
+    console.log('Layout calculated, positions:', positions.size);
     setInitialPositions(positions);
-  }, [parsedData]);
+  }, [allNodes, parsedData.relations]);
 
   const {
     positions,
@@ -25,8 +39,16 @@ export const DiagramTab = ({ parsedData }) => {
     onDrag,
     endDrag,
     resetPositions,
+    updateBasePositions,
     hasCustomPositions
   } = useDraggableNodes(initialPositions);
+
+  // Aggiorna posizioni quando cambiano quelle iniziali
+  useEffect(() => {
+    if (initialPositions.size > 0) {
+      updateBasePositions(initialPositions);
+    }
+  }, [initialPositions, updateBasePositions]);
 
   const handleNodeClick = (nodeName) => {
     if (!dragging) {
@@ -54,6 +76,9 @@ export const DiagramTab = ({ parsedData }) => {
       rel => rel.from === selectedNode || rel.to === selectedNode
     );
   };
+
+  // Debug: mostra stato
+  console.log('DiagramTab render - positions:', positions.size, 'nodes:', allNodes.length);
 
   return (
     <div className="relative">

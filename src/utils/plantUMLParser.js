@@ -1,6 +1,6 @@
 /**
- * Parser per file PlantUML
- * Estrae classi, enumerazioni, interfacce e relazioni
+ * Parser PlantUML - Conforme alla Reference Guide ufficiale
+ * Supporta: classi, interfacce, enum, abstract, separatori, alias, note
  */
 
 export const parseFile = (content) => {
@@ -12,129 +12,265 @@ export const parseFile = (content) => {
   const packages = [];
   
   let currentPackage = null;
-  let currentClass = null;
-  let currentEnum = null;
-  let currentInterface = null;
+  let currentEntity = null; // Può essere class, enum o interface
+  let currentEntityType = null; // 'class', 'enum', 'interface'
+  let inNote = false;
+  let noteDepth = 0;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-
-    // Package
-    if (line.startsWith('package ')) {
-      currentPackage = line.match(/package\s+(\w+)/)?.[1];
-      if (currentPackage && !packages.includes(currentPackage)) {
-        packages.push(currentPackage);
-      }
+    let line = lines[i].trim();
+    
+    // Skip empty lines, comments, and PlantUML directives
+    if (!line || 
+        line.startsWith("'") || 
+        line.startsWith('@startuml') || 
+        line.startsWith('@enduml') ||
+        line.startsWith('skinparam') ||
+        line.startsWith('left to right') ||
+        line.startsWith('hide ')) {
+      continue;
     }
 
-    // Class
-    if (line.startsWith('class ') && !line.includes('<<')) {
-      const className = line.match(/class\s+"?([^"\s{]+)"?/)?.[1] || line.match(/class\s+(\w+)/)?.[1];
-      if (className) {
-        currentClass = {
-          name: className,
+    // Handle multi-line notes
+    if (line.startsWith('note ') || line.includes(' note ')) {
+      inNote = true;
+      noteDepth = 1;
+      continue;
+    }
+    if (inNote) {
+      if (line === 'end note') {
+        inNote = false;
+        noteDepth = 0;
+      }
+      continue;
+    }
+
+    // Package declaration
+    if (line.match(/^package\s+/)) {
+      const match = line.match(/package\s+(\w+)/);
+      if (match) {
+        currentPackage = match[1];
+        if (!packages.includes(currentPackage)) {
+          packages.push(currentPackage);
+        }
+      }
+      continue;
+    }
+
+    // Close package
+    if (line === '}' && currentPackage && !currentEntity) {
+      currentPackage = null;
+      continue;
+    }
+
+    // Class declaration (con supporto per alias e modificatori)
+    // Formato: [abstract] class "Name" [as Alias] {
+    if (line.match(/^\s*(abstract\s+)?class\s+/)) {
+      const match = line.match(/(?:abstract\s+)?class\s+(?:"([^"]+)"\s+as\s+(\w+)|"([^"]+)"|(\w+))/);
+      if (match) {
+        const displayName = match[1] || match[3]; // Nome tra virgolette
+        const alias = match[2]; // Alias dopo "as"
+        const simpleName = match[4]; // Nome semplice senza virgolette
+        
+        const className = alias || displayName || simpleName;
+        
+        currentEntity = {
+          name: className.replace(/\\n/g, ''), // Rimuovi \n dai nomi
+          displayName: displayName || simpleName,
           package: currentPackage,
           attributes: [],
           methods: []
         };
-        classes.push(currentClass);
+        classes.push(currentEntity);
+        currentEntityType = 'class';
       }
+      continue;
     }
 
-    // Enum
-    if (line.startsWith('enum ')) {
-      const enumName = line.match(/enum\s+(\w+)/)?.[1];
-      if (enumName) {
-        currentEnum = {
-          name: enumName,
-          package: currentPackage,
-          values: []
-        };
-        enums.push(currentEnum);
-        currentClass = null;
-      }
-    }
-
-    // Interface
-    if (line.startsWith('interface ')) {
-      const interfaceName = line.match(/interface\s+(\w+)/)?.[1];
-      if (interfaceName) {
-        currentInterface = {
-          name: interfaceName,
+    // Interface declaration
+    if (line.match(/^\s*interface\s+/)) {
+      const match = line.match(/interface\s+(\w+)/);
+      if (match) {
+        currentEntity = {
+          name: match[1],
           package: currentPackage,
           attributes: []
         };
-        interfaces.push(currentInterface);
-        currentClass = null;
+        interfaces.push(currentEntity);
+        currentEntityType = 'interface';
       }
+      continue;
     }
 
-    // Attributes for classes
-    if (currentClass && line.includes(':') && !line.startsWith('class') && 
-        !line.startsWith('enum') && !line.includes('--') && !line.includes('..') && 
-        line !== '..') {
-      const attrMatch = line.match(/(\w+)\s*:\s*([^\/]+)/);
-      if (attrMatch) {
-        currentClass.attributes.push({
-          name: attrMatch[1].trim(),
-          type: attrMatch[2].trim()
-        });
-      }
-    }
-
-    // Attributes for interfaces
-    if (currentInterface && line.includes(':') && !line.startsWith('interface') && 
-        !line.includes('--') && !line.includes('..')) {
-      const attrMatch = line.match(/(\w+)\s*:\s*([^\/]+)/);
-      if (attrMatch) {
-        currentInterface.attributes.push({
-          name: attrMatch[1].trim(),
-          type: attrMatch[2].trim()
-        });
-      }
-    }
-
-    // Enum values
-    if (currentEnum && !line.startsWith('enum') && !line.includes('}') && 
-        line.length > 0 && !line.startsWith('note')) {
-      const enumValue = line.replace(/[[\]]/g, '').trim();
-      if (enumValue && !enumValue.includes(':')) {
-        currentEnum.values.push(enumValue);
-      }
-    }
-
-    // Relations
-    const relationPatterns = [
-      { regex: /(\w+)\s*<\|-+\[.*?\]-\s*(\w+)/, type: 'inheritance' },
-      { regex: /(\w+)\s*<\|-+\s*(\w+)/, type: 'inheritance' },
-      { regex: /(\w+)\s*<\|\.+\s*(\w+)/, type: 'implementation' },
-      { regex: /(\w+)\s*\*--\s*(\w+)/, type: 'composition' },
-      { regex: /(\w+)\s*o--\s*(\w+)/, type: 'aggregation' },
-      { regex: /(\w+)\s*--\*\s*(\w+)/, type: 'composition' },
-      { regex: /(\w+)\s*-->\s*(\w+)/, type: 'association' },
-      { regex: /(\w+)\s*--\s*(\w+)/, type: 'association' }
-    ];
-
-    for (const pattern of relationPatterns) {
-      const match = line.match(pattern.regex);
+    // Enum declaration
+    if (line.match(/^\s*enum\s+/)) {
+      const match = line.match(/enum\s+(\w+)/);
       if (match) {
-        relations.push({
-          from: match[1],
-          to: match[2],
-          type: pattern.type
-        });
-        break;
+        currentEntity = {
+          name: match[1],
+          package: currentPackage,
+          values: []
+        };
+        enums.push(currentEntity);
+        currentEntityType = 'enum';
+      }
+      continue;
+    }
+
+    // Close entity
+    if (line === '}' && currentEntity) {
+      currentEntity = null;
+      currentEntityType = null;
+      continue;
+    }
+
+    // Inside an entity - parse members
+    if (currentEntity) {
+      // Skip separators and section headers
+      if (line === '..' || 
+          line.startsWith('==') || 
+          line.startsWith('--') ||
+          line === '{' ||
+          line === '}') {
+        continue;
+      }
+
+      // Enum values
+      if (currentEntityType === 'enum') {
+        // Remove brackets, quotes, and trailing comments
+        let enumValue = line
+          .replace(/^\[/, '')
+          .replace(/\]$/, '')
+          .replace(/\[D\]/, 'D')
+          .replace(/\[W\]/, 'W')
+          .replace(/\[M\]/, 'M')
+          .replace(/\[Y\]/, 'Y')
+          .split('//')[0]
+          .split(':')[0]
+          .trim();
+        
+        if (enumValue && enumValue.length > 0 && !enumValue.includes('note')) {
+          currentEntity.values.push(enumValue);
+        }
+        continue;
+      }
+
+      // Class/Interface attributes and methods
+      if (currentEntityType === 'class' || currentEntityType === 'interface') {
+        // Attribute format: name : type [multiplicity] [= defaultValue]
+        // Method format: name(params) : returnType
+        
+        // Skip if it's a label or description (contains just text without :)
+        if (!line.includes(':')) {
+          continue;
+        }
+
+        // Check if it's a method (contains parentheses)
+        const isMethod = line.includes('(') && line.includes(')');
+        
+        if (isMethod && currentEntityType === 'class') {
+          const methodMatch = line.match(/(\w+)\s*\([^)]*\)\s*(?::\s*(.+))?/);
+          if (methodMatch) {
+            currentEntity.methods.push({
+              name: methodMatch[1],
+              returnType: methodMatch[2]?.trim() || 'void'
+            });
+          }
+        } else {
+          // It's an attribute
+          // Match: name : type or name: type [0..1] or similar
+          const attrMatch = line.match(/(\w+)\s*:\s*(.+?)$/);
+          if (attrMatch) {
+            let attrName = attrMatch[1].trim();
+            let attrType = attrMatch[2].trim();
+            
+            // Clean up the type:
+            // Remove comments
+            attrType = attrType.split('//')[0].trim();
+            
+            // Remove visibility modifiers if present at the start
+            attrType = attrType.replace(/^[\+\-\#\~]\s*/, '');
+            
+            currentEntity.attributes.push({
+              name: attrName,
+              type: attrType
+            });
+          }
+        }
+        continue;
       }
     }
 
-    // Reset current context
-    if (line === '}' || line.startsWith('}')) {
-      currentClass = null;
-      currentEnum = null;
-      currentInterface = null;
+    // Parse relations (outside entities)
+    if (!currentEntity) {
+      // Relation patterns from PlantUML spec:
+      // Extension: <|--
+      // Composition: *--
+      // Aggregation: o--
+      // Association: -->
+      // Implementation: <|..
+      // Dependency: <..
+      
+      const relationPatterns = [
+        // Inheritance/Extension
+        { regex: /(\w+)\s+<\|-+\[.*?\]-\s*(\w+)/, type: 'inheritance' },
+        { regex: /(\w+)\s+<\|-+\s+(\w+)/, type: 'inheritance' },
+        
+        // Implementation
+        { regex: /(\w+)\s+<\|\.+\[.*?\]\s*(\w+)/, type: 'implementation' },
+        { regex: /(\w+)\s+<\|\.+\s+(\w+)/, type: 'implementation' },
+        
+        // Composition (strong)
+        { regex: /(\w+)(?:::\w+)?\s+\*--\s+(\w+)(?:::\w+)?/, type: 'composition' },
+        { regex: /(\w+)(?:::\w+)?\s+--\*\s+(\w+)(?:::\w+)?/, type: 'composition' },
+        
+        // Aggregation (weak)
+        { regex: /(\w+)(?:::\w+)?\s+o--\s+(\w+)(?:::\w+)?/, type: 'aggregation' },
+        { regex: /(\w+)(?:::\w+)?\s+--o\s+(\w+)(?:::\w+)?/, type: 'aggregation' },
+        { regex: /(\w+)(?:::\w+)?\s+o\.+\s+(\w+)(?:::\w+)?/, type: 'aggregation' },
+        
+        // Association (directed)
+        { regex: /(\w+)(?:::\w+)?\s+-->\s+(\w+)(?:::\w+)?/, type: 'association' },
+        { regex: /(\w+)(?:::\w+)?\s+<--\s+(\w+)(?:::\w+)?/, type: 'association' },
+        { regex: /(\w+)(?:::\w+)?\s+\.+>\s+(\w+)(?:::\w+)?/, type: 'dependency' },
+        
+        // Association (non-directed)
+        { regex: /(\w+)(?:::\w+)?\s+--\s+(\w+)(?:::\w+)?/, type: 'association' },
+        
+        // Nested/Inner classes
+        { regex: /(\w+)\s+\+--\s+(\w+)/, type: 'nested' }
+      ];
+
+      for (const pattern of relationPatterns) {
+        const match = line.match(pattern.regex);
+        if (match) {
+          const from = match[1];
+          const to = match[2];
+          
+          // Check for duplicates
+          const isDuplicate = relations.some(r => 
+            r.from === from && r.to === to && r.type === pattern.type
+          );
+          
+          if (!isDuplicate) {
+            relations.push({
+              from: from,
+              to: to,
+              type: pattern.type
+            });
+          }
+          break;
+        }
+      }
     }
   }
 
+  console.log('=== PARSING RESULTS ===');
+  console.log('Classes:', classes.length, classes.map(c => `${c.name} (${c.attributes.length} attrs)`));
+  console.log('Interfaces:', interfaces.length, interfaces.map(i => `${i.name} (${i.attributes.length} attrs)`));
+  console.log('Enums:', enums.length, enums.map(e => `${e.name} (${e.values.length} values)`));
+  console.log('Relations:', relations.length);
+  
   return { classes, enums, interfaces, relations, packages };
 };
 
@@ -145,6 +281,8 @@ export const getRelationSymbol = (type) => {
     case 'composition': return '◆───';
     case 'aggregation': return '◇───';
     case 'association': return '───';
+    case 'dependency': return '···>';
+    case 'nested': return '⊕───';
     default: return '───';
   }
 };
@@ -156,6 +294,8 @@ export const getRelationColor = (type) => {
     case 'composition': return 'text-red-600';
     case 'aggregation': return 'text-orange-600';
     case 'association': return 'text-gray-600';
+    case 'dependency': return 'text-green-600';
+    case 'nested': return 'text-pink-600';
     default: return 'text-gray-600';
   }
 };
@@ -166,6 +306,8 @@ export const getRelationStrokeColor = (type) => {
     case 'implementation': return '#9333ea';
     case 'composition': return '#dc2626';
     case 'aggregation': return '#ea580c';
+    case 'dependency': return '#22c55e';
+    case 'nested': return '#ec4899';
     default: return '#6b7280';
   }
 };
@@ -176,10 +318,12 @@ export const getRelationMarker = (type) => {
     case 'implementation': return 'url(#arrow-implementation)';
     case 'composition': return 'url(#arrow-composition)';
     case 'aggregation': return 'url(#arrow-aggregation)';
+    case 'dependency': return 'url(#arrow-dependency)';
+    case 'nested': return 'url(#arrow-nested)';
     default: return 'url(#arrow-association)';
   }
 };
 
 export const getRelationDashArray = (type) => {
-  return type === 'implementation' ? '5,5' : 'none';
+  return (type === 'implementation' || type === 'dependency') ? '5,5' : 'none';
 };

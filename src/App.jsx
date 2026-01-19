@@ -16,7 +16,9 @@ const App = () => {
   const [searchTerm, setSearchTerm] = useState('');
 
   const handleFileLoad = (content) => {
+    console.log('File loaded, content length:', content.length);
     const data = parseFile(content);
+    console.log('Parsed data:', data);
     setParsedData(data);
     setActiveTab('diagram');
   };

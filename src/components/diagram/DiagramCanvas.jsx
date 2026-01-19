@@ -26,6 +26,29 @@ const DiagramCanvas = ({
     }
   }, [dragging, onMouseMove, onMouseUp]);
 
+  // Debug: log positions
+  useEffect(() => {
+    console.log('DiagramCanvas - Nodes:', nodes.length);
+    console.log('DiagramCanvas - Positions:', positions.size);
+    console.log('DiagramCanvas - Relations:', relations.length);
+  }, [nodes, positions, relations]);
+
+  if (!nodes || nodes.length === 0) {
+    return (
+      <div className="border border-gray-300 rounded-lg bg-white p-8 text-center" style={{ height: '800px' }}>
+        <p className="text-gray-500">Nessun nodo da visualizzare</p>
+      </div>
+    );
+  }
+
+  if (!positions || positions.size === 0) {
+    return (
+      <div className="border border-gray-300 rounded-lg bg-white p-8 text-center" style={{ height: '800px' }}>
+        <p className="text-gray-500">Calcolo posizioni in corso...</p>
+      </div>
+    );
+  }
+
   return (
     <div 
       className="border border-gray-300 rounded-lg overflow-auto bg-white" 
@@ -93,6 +116,28 @@ const DiagramCanvas = ({
           >
             <path d="M0,0 L0,6 L9,3 z" fill="#6b7280" />
           </marker>
+          <marker 
+            id="arrow-dependency" 
+            markerWidth="10" 
+            markerHeight="10" 
+            refX="9" 
+            refY="3" 
+            orient="auto" 
+            markerUnits="strokeWidth"
+          >
+            <path d="M0,0 L0,6 L9,3 z" fill="#22c55e" />
+          </marker>
+          <marker 
+            id="arrow-nested" 
+            markerWidth="10" 
+            markerHeight="10" 
+            refX="9" 
+            refY="3" 
+            orient="auto" 
+            markerUnits="strokeWidth"
+          >
+            <circle cx="5" cy="3" r="3" fill="#ec4899" />
+          </marker>
         </defs>
 
         <g transform={`scale(${zoom})`}>
@@ -100,6 +145,11 @@ const DiagramCanvas = ({
           {relations.map((rel, idx) => {
             const fromPos = positions.get(rel.from);
             const toPos = positions.get(rel.to);
+            
+            if (!fromPos || !toPos) {
+              console.warn(`Missing position for relation: ${rel.from} -> ${rel.to}`);
+              return null;
+            }
             
             return (
               <DiagramEdge 
@@ -114,7 +164,10 @@ const DiagramCanvas = ({
           {/* Render nodes */}
           {nodes.map(node => {
             const position = positions.get(node.name);
-            if (!position) return null;
+            if (!position) {
+              console.warn(`Missing position for node: ${node.name}`);
+              return null;
+            }
 
             const isInterface = node.attributes && 
               nodes.some(n => n.name === node.name && !n.methods);
