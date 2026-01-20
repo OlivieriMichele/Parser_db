@@ -1,12 +1,13 @@
 import React from 'react';
-import { Eye, Box, FileText, Database, GitBranch } from 'lucide-react';
+import { Eye, Box, FileText, Database, GitBranch, FileJson } from 'lucide-react';
 
 const TABS = [
   { id: 'diagram', label: 'Diagramma ER', icon: Eye },
   { id: 'classes', label: 'Classi', icon: Box },
   { id: 'enums', label: 'Enumerazioni', icon: FileText },
   { id: 'interfaces', label: 'Interfacce', icon: Database },
-  { id: 'relations', label: 'Relazioni', icon: GitBranch }
+  { id: 'relations', label: 'Relazioni', icon: GitBranch },
+  { id: 'schema', label: 'Schemi JSON', icon: FileJson }
 ];
 
 const TabNavigation = ({ activeTab, setActiveTab }) => {

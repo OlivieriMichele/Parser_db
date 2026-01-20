@@ -4,3 +4,4 @@ export { ClassesTab } from './ClassesTab';
 export { EnumsTab } from './EnumsTab';
 export { InterfacesTab } from './InterfacesTab';
 export { RelationsTab } from './RelationsTab';
+export { SchemaTab } from './SchemaTab';

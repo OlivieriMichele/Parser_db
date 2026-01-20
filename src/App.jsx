@@ -3,11 +3,14 @@ import { parseFile } from './utils/plantUMLParser';
 import FileUpload from './components/FileUpload';
 import Header from './components/Header';
 import TabNavigation from './components/TabNavigation';
-import { DiagramTab } from './components/tabs/DiagramTab';
-import { ClassesTab } from './components/tabs/ClassesTab';
-import { EnumsTab } from './components/tabs/EnumsTab';
-import { InterfacesTab } from './components/tabs/InterfacesTab';
-import { RelationsTab } from './components/tabs/RelationsTab';
+import { 
+  DiagramTab, 
+  ClassesTab, 
+  EnumsTab, 
+  InterfacesTab, 
+  RelationsTab,
+  SchemaTab  // ← NUOVO import
+} from './components/tabs';
 
 const App = () => {
   const [parsedData, setParsedData] = useState(null);
@@ -68,6 +71,7 @@ const App = () => {
             {activeTab === 'enums' && <EnumsTab enums={filteredEnums} />}
             {activeTab === 'interfaces' && <InterfacesTab interfaces={filteredInterfaces} />}
             {activeTab === 'relations' && <RelationsTab relations={parsedData.relations} />}
+            {activeTab === 'schema' && <SchemaTab parsedData={parsedData} />}  {/* ← NUOVO */}
           </div>
         </div>
       </div>
