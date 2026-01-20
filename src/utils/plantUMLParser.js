@@ -158,13 +158,9 @@ export const parseFile = (content) => {
       // Class/Interface attributes and methods
       if (currentEntityType === 'class' || currentEntityType === 'interface') {
         // Attribute format: name : type [multiplicity] [= defaultValue]
+        // OR just: name (without type, defaults to String)
         // Method format: name(params) : returnType
         
-        // Skip if it's a label or description (contains just text without :)
-        if (!line.includes(':')) {
-          continue;
-        }
-
         // Check if it's a method (contains parentheses)
         const isMethod = line.includes('(') && line.includes(')');
         
@@ -178,23 +174,34 @@ export const parseFile = (content) => {
           }
         } else {
           // It's an attribute
-          // Match: name : type or name: type [0..1] or similar
-          const attrMatch = line.match(/(\w+)\s*:\s*(.+?)$/);
-          if (attrMatch) {
-            let attrName = attrMatch[1].trim();
-            let attrType = attrMatch[2].trim();
-            
-            // Clean up the type:
-            // Remove comments
-            attrType = attrType.split('//')[0].trim();
-            
-            // Remove visibility modifiers if present at the start
-            attrType = attrType.replace(/^[\+\-\#\~]\s*/, '');
-            
-            currentEntity.attributes.push({
-              name: attrName,
-              type: attrType
-            });
+          if (line.includes(':')) {
+            // Standard format: name : type
+            const attrMatch = line.match(/(\w+)\s*:\s*(.+?)$/);
+            if (attrMatch) {
+              let attrName = attrMatch[1].trim();
+              let attrType = attrMatch[2].trim();
+              
+              // Clean up the type:
+              // Remove comments
+              attrType = attrType.split('//')[0].trim();
+              
+              // Remove visibility modifiers if present at the start
+              attrType = attrType.replace(/^[\+\-\#\~]\s*/, '');
+              
+              currentEntity.attributes.push({
+                name: attrName,
+                type: attrType
+              });
+            }
+          } else {
+            // Attribute without type: just name
+            const nameMatch = line.match(/^[\+\-\#\~]?\s*(\w+)\s*$/);
+            if (nameMatch) {
+              currentEntity.attributes.push({
+                name: nameMatch[1].trim(),
+                type: 'String' // Default type
+              });
+            }
           }
         }
         continue;
@@ -203,38 +210,46 @@ export const parseFile = (content) => {
 
     // Parse relations (outside entities)
     if (!currentEntity) {
-      // Relation patterns from PlantUML spec:
-      // Extension: <|--
-      // Composition: *--
-      // Aggregation: o--
-      // Association: -->
-      // Implementation: <|..
-      // Dependency: <..
+      // Relation patterns from PlantUML spec with support for:
+      // - Direction modifiers: [udlr] (up, down, left, right)
+      // - Line styles: [thickness=N], [bold], [dashed], etc.
+      // - Colors and labels
       
       const relationPatterns = [
-        // Inheritance/Extension
-        { regex: /(\w+)\s+<\|-+\[.*?\]-\s*(\w+)/, type: 'inheritance' },
+        // Inheritance/Extension with modifiers
+        { regex: /(\w+)\s+<\|-+\[.*?\][udlr]?-?\s*(\w+)/, type: 'inheritance' },
+        { regex: /(\w+)\s+<\|-+[udlr]?\s+(\w+)/, type: 'inheritance' },
         { regex: /(\w+)\s+<\|-+\s+(\w+)/, type: 'inheritance' },
         
-        // Implementation
+        // Implementation with modifiers (most common in your file)
+        // Format: Interface <|.[thickness=2]d. Class
+        { regex: /(\w+)\s+<\|\.+\[.*?\][udlr]?\.+\s*(\w+)/, type: 'implementation' },
+        { regex: /(\w+)\s+<\|\.+[udlr]?\.+\s*(\w+)/, type: 'implementation' },
         { regex: /(\w+)\s+<\|\.+\[.*?\]\s*(\w+)/, type: 'implementation' },
         { regex: /(\w+)\s+<\|\.+\s+(\w+)/, type: 'implementation' },
         
-        // Composition (strong)
+        // Composition (strong) with modifiers
+        { regex: /(\w+)(?:::\w+)?\s+\*-+\[.*?\][udlr]?-?\s*(\w+)(?:::\w+)?/, type: 'composition' },
+        { regex: /(\w+)(?:::\w+)?\s+-+\[.*?\][udlr]?\*\s*(\w+)(?:::\w+)?/, type: 'composition' },
         { regex: /(\w+)(?:::\w+)?\s+\*--\s+(\w+)(?:::\w+)?/, type: 'composition' },
         { regex: /(\w+)(?:::\w+)?\s+--\*\s+(\w+)(?:::\w+)?/, type: 'composition' },
         
-        // Aggregation (weak)
+        // Aggregation (weak) with modifiers
+        { regex: /(\w+)(?:::\w+)?\s+o-+\[.*?\][udlr]?-?\s*(\w+)(?:::\w+)?/, type: 'aggregation' },
+        { regex: /(\w+)(?:::\w+)?\s+-+\[.*?\][udlr]?o\s*(\w+)(?:::\w+)?/, type: 'aggregation' },
         { regex: /(\w+)(?:::\w+)?\s+o--\s+(\w+)(?:::\w+)?/, type: 'aggregation' },
         { regex: /(\w+)(?:::\w+)?\s+--o\s+(\w+)(?:::\w+)?/, type: 'aggregation' },
         { regex: /(\w+)(?:::\w+)?\s+o\.+\s+(\w+)(?:::\w+)?/, type: 'aggregation' },
         
-        // Association (directed)
+        // Association (directed) with modifiers
+        { regex: /(\w+)(?:::\w+)?\s+-+\[.*?\][udlr]?>\s*(\w+)(?:::\w+)?/, type: 'association' },
+        { regex: /(\w+)(?:::\w+)?\s+<-+\[.*?\][udlr]?-?\s*(\w+)(?:::\w+)?/, type: 'association' },
         { regex: /(\w+)(?:::\w+)?\s+-->\s+(\w+)(?:::\w+)?/, type: 'association' },
         { regex: /(\w+)(?:::\w+)?\s+<--\s+(\w+)(?:::\w+)?/, type: 'association' },
         { regex: /(\w+)(?:::\w+)?\s+\.+>\s+(\w+)(?:::\w+)?/, type: 'dependency' },
         
-        // Association (non-directed)
+        // Association (non-directed) with modifiers
+        { regex: /(\w+)(?:::\w+)?\s+-+\[.*?\][udlr]?-?\s*(\w+)(?:::\w+)?/, type: 'association' },
         { regex: /(\w+)(?:::\w+)?\s+--\s+(\w+)(?:::\w+)?/, type: 'association' },
         
         // Nested/Inner classes
